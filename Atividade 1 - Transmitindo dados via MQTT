@@ -1,0 +1,86 @@
+#include <stdio.h>
+#include <string.h>
+#include "pico/stdlib.h"
+#include "hardware/adc.h"
+#include "hardware/gpio.h"
+#include "pico/cyw43_arch.h"
+#include "MQTTClient.h"
+#include "lwip/ip_addr.h"
+
+#define REDE_SSID "IARADOSSI-5G"
+#define REDE_SENHA "73960020"
+#define BROKER_MQTT "test.mosquitto.org"
+#define PORTA_MQTT 1883
+#define TOPICO_MQTT "pico/temperatura"
+#define PINO_BOTAO 15
+
+float capturar_temperatura() {
+    adc_select_input(4);
+    uint16_t leitura = adc_read();
+    float volts = leitura * 3.3f / (1 << 12);
+    return 27.0f - (volts - 0.706f) / 0.001721f;
+}
+
+void publicar_mensagem(MQTTClient* cliente) {
+    float temp = capturar_temperatura();
+    char mensagem[64];
+    snprintf(mensagem, sizeof(mensagem), "{"temperatura": %.2f}", temp);
+
+    MQTTMessage pacote;
+    pacote.qos = QOS0;
+    pacote.retained = 0;
+    pacote.payload = mensagem;
+    pacote.payloadlen = strlen(mensagem);
+
+    if (MQTTClient_publish(cliente, TOPICO_MQTT, &pacote) == 0) {
+        printf("Enviado: %s\n", mensagem);
+    } else {
+        printf("Erro ao enviar via MQTT.\n");
+    }
+}
+
+int main() {
+    stdio_init_all();
+    adc_init();
+    adc_set_temp_sensor_enabled(true);
+    gpio_init(PINO_BOTAO);
+    gpio_set_dir(PINO_BOTAO, GPIO_IN);
+    gpio_pull_up(PINO_BOTAO);
+
+    if (cyw43_arch_init()) return -1;
+    cyw43_arch_enable_sta_mode();
+
+    while (cyw43_arch_wifi_connect_timeout_ms(REDE_SSID, REDE_SENHA, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
+        sleep_ms(2000);
+    }
+
+    Network rede;
+    MQTTClient cliente;
+    unsigned char buffer_envio[100], buffer_recebimento[100];
+    NetworkInit(&rede);
+
+    if (NetworkConnect(&rede, BROKER_MQTT, PORTA_MQTT) != 0) return -1;
+
+    MQTTClientInit(&cliente, &rede, 3000, buffer_envio, sizeof(buffer_envio), buffer_recebimento, sizeof(buffer_recebimento));
+    MQTTPacket_connectData conexao = MQTTPacket_connectData_initializer;
+    conexao.MQTTVersion = 3;
+    conexao.clientID.cstring = "dispositivo_pico";
+
+    if (MQTTConnect(&cliente, &conexao) != 0) return -1;
+
+    bool estado_anterior = true;
+
+    while (1) {
+        bool pressionado = !gpio_get(PINO_BOTAO);
+        if (pressionado && estado_anterior) {
+            publicar_mensagem(&cliente);
+        }
+        estado_anterior = !pressionado;
+        sleep_ms(100);
+    }
+
+    MQTTDisconnect(&cliente);
+    NetworkDisconnect(&rede);
+    cyw43_arch_deinit();
+    return 0;
+}
