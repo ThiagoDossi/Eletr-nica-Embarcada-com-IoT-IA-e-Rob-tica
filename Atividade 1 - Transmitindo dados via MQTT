@@ -7,8 +7,8 @@
 #include "MQTTClient.h"
 #include "lwip/ip_addr.h"
 
-#define REDE_SSID "SEU_WIFI"
-#define REDE_SENHA "SUA_SENHA"
+#define REDE_SSID "IARADOSSI-5G"
+#define REDE_SENHA "73960020"
 #define BROKER_MQTT "test.mosquitto.org"
 #define PORTA_MQTT 1883
 #define TOPICO_MQTT "pico/temperatura"
@@ -84,3 +84,4 @@ int main() {
     cyw43_arch_deinit();
     return 0;
 }
+
